@@ -1,0 +1,312 @@
+/**
+ * 崇華十六期整合管理系統 - GAS 後端主程式 (定位管理優化版)
+ */
+
+const SPREADSHEET_ID = '1u3D7u5hn7dcVGgGxmNBm233B_sz16kPuUcncvCnNr6U';
+const UPLOAD_FOLDER_ID = '1IH8Zr8P9rQFUZ52CzfvVARmio70iDLmC';
+
+/**
+ * 處理 GET 請求：資料讀取
+ */
+function doGet(e) {
+  const action = e.parameter.action;
+  const name = e.parameter.name;
+  const group = e.parameter.group;
+  const role = e.parameter.role;
+  
+  try {
+    switch (action) {
+      case 'getHistory': return JSONResponse(getHistory(group, name));
+      case 'getConfig': return JSONResponse(handleGetConfig());
+      case 'checkAttendance': return JSONResponse(checkAttendanceStatus(group, name));
+      case 'getAttendanceReport': return JSONResponse(getAttendanceReport(role, group));
+      case 'getAnnouncements': return JSONResponse(getAnnouncements());
+      case 'getLocations': return JSONResponse(getLocationsData()); // 新增：讀取座標清單
+      default: throw new Error("未定義的讀取動作");
+    }
+  } catch (err) {
+    return JSONResponse({ success: false, error: err.toString() });
+  }
+}
+
+/**
+ * 處理 POST 請求：資料寫入
+ */
+function doPost(e) {
+  let params;
+  try {
+    params = (e.postData && e.postData.contents) ? JSON.parse(e.postData.contents) : e.parameter;
+  } catch (err) { params = e.parameter; }
+
+  const action = params.action;
+  try {
+    switch (action) {
+      case 'register': return JSONResponse(handleRegister(params));
+      case 'login': return JSONResponse(handleLogin(params));
+      case 'signIn': return JSONResponse(handleSignIn(params));
+      case 'submitQuiz': return JSONResponse(handleSubmitQuiz(params));
+      case 'updateConfig': return JSONResponse(handleUpdateConfig(params.config));
+      case 'updateAnnouncement': return JSONResponse(updateAnnouncement(params));
+      case 'uploadFile': return JSONResponse(handleFileUpload(params));
+      case 'saveTransferRecord': return JSONResponse(handleSaveTransferRecord(params));
+      default: throw new Error("未定義的寫入動作: " + action);
+    }
+  } catch (err) {
+    return JSONResponse({ success: false, error: err.message || err.toString() });
+  }
+}
+
+/**
+ * 格式化 JSON 回傳
+ */
+function JSONResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ==========================================
+// 1. 座標地點管理 (新增功能)
+// ==========================================
+function getLocationsData() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Locations');
+  if (!sheet) return { success: false, error: "找不到 Locations 分頁" };
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { success: true, data: [] };
+  
+  const locations = data.slice(1).map(row => ({
+    name: row[0].toString(),
+    lat: parseFloat(row[1]),
+    lng: parseFloat(row[2]),
+    radius: parseFloat(row[3]) || 500
+  })).filter(loc => !isNaN(loc.lat) && !isNaN(loc.lng));
+  
+  return { success: true, data: locations };
+}
+
+// ==========================================
+// 2. 參數設定系統 (合併模式)
+// ==========================================
+function handleGetConfig() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Config') || ss.insertSheet('Config');
+  const data = sheet.getDataRange().getValues();
+  const config = {};
+  if (data.length > 1) {
+    data.slice(1).forEach(r => { 
+      if(r[0]) {
+        config[r[0].toString().trim()] = { 
+          start: r[1] instanceof Date ? Utilities.formatDate(r[1], "GMT+8", "yyyy-MM-dd HH:mm") : r[1].toString(), 
+          end: r[2] instanceof Date ? Utilities.formatDate(r[2], "GMT+8", "yyyy-MM-dd HH:mm") : (r[2] ? r[2].toString() : "")
+        }; 
+      }
+    });
+  }
+  return config;
+}
+
+function handleUpdateConfig(configStr) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Config') || ss.insertSheet('Config');
+  const currentData = sheet.getDataRange().getValues();
+  const configMap = {};
+  
+  if (currentData.length > 1) {
+    currentData.slice(1).forEach(row => {
+      if (row[0]) {
+        configMap[row[0].toString().trim()] = { start: row[1], end: row[2] };
+      }
+    });
+  }
+  
+  const updates = JSON.parse(configStr);
+  for (let key in updates) {
+    configMap[key.trim()] = { start: updates[key].start, end: updates[key].end || "" };
+  }
+  
+  sheet.clear().appendRow(['項目', '開始時間/數值', '結束時間']);
+  sheet.getRange(1, 1, 1, 3).setBackground('#f3f4f6').setFontWeight('bold');
+  
+  const allKeys = Object.keys(configMap).sort();
+  allKeys.forEach(key => {
+    sheet.appendRow([key, configMap[key].start, configMap[key].end]);
+  });
+  
+  return { success: true };
+}
+
+// ==========================================
+// 3. 簽到系統與出席報表
+// ==========================================
+function handleSignIn(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const monthStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy/MM");
+  const sheetName = '簽到' + monthStr;
+  let sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+  
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['時間', '組別', '姓名', '狀態', '備註']);
+    sheet.getRange(1, 1, 1, 5).setBackground('#e0f2fe').setFontWeight('bold');
+  }
+  
+  sheet.appendRow([new Date(), data.group, data.name, data.leaveType || '正常出席', data.reason || '']);
+  return { success: true };
+}
+
+function getAttendanceReport(role, userGroup) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const monthStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy/MM");
+  const sheet = ss.getSheetByName('簽到' + monthStr);
+  if (!sheet) return { success: true, data: [] };
+  
+  const data = sheet.getDataRange().getValues();
+  const todayStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd");
+  
+  const list = data.slice(1).filter(row => {
+    const rowDate = Utilities.formatDate(new Date(row[0]), "GMT+8", "yyyy-MM-dd");
+    const groupMatch = (role !== 'Leader' && role !== '組長') || row[1].toString().trim() === userGroup.toString().trim();
+    return rowDate === todayStr && groupMatch;
+  }).map(row => ({ 
+    group: row[1], 
+    name: row[2], 
+    time: row[0] instanceof Date ? Utilities.formatDate(row[0], "GMT+8", "HH:mm") : "", 
+    note: row[3] // 狀態
+  }));
+  
+  return { success: true, data: list };
+}
+
+function checkAttendanceStatus(group, name) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const monthStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy/MM");
+  const sheet = ss.getSheetByName('簽到' + monthStr);
+  if (!sheet) return { signedIn: false };
+  
+  const today = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd");
+  const rows = sheet.getDataRange().getValues();
+  
+  // 找尋最後一筆紀錄
+  const row = rows.slice().reverse().find(r => 
+    Utilities.formatDate(new Date(r[0]), "GMT+8", "yyyy-MM-dd") === today && 
+    r[1].toString().trim() == group.toString().trim() && 
+    r[2].toString().trim() == name.toString().trim()
+  );
+  
+  return { 
+    signedIn: !!row, 
+    time: row ? Utilities.formatDate(new Date(row[0]), "GMT+8", "HH:mm") : "" 
+  };
+}
+
+// ==========================================
+// 4. 使用者管理
+// ==========================================
+function handleRegister(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Users');
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0].toString().trim() === data.group.toString().trim() && rows[i][1].toString().trim() === data.name.toString().trim()) {
+      if (rows[i][2] && rows[i][2].toString().trim() !== "") return { success: false, error: "此帳號已註冊過。" };
+      sheet.getRange(i + 1, 3).setValue(data.password.toString());
+      sheet.getRange(i + 1, 5).setValue(new Date());
+      return { success: true };
+    }
+  }
+  return { success: false, error: "名單中找不到您的資料。" };
+}
+
+function handleLogin(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Users');
+  const rows = sheet.getDataRange().getValues();
+  const user = rows.find(row => row[0].toString().trim() === data.group.toString().trim() && row[1].toString().trim() === data.name.toString().trim());
+  if (!user) return { success: false, error: "帳號不存在。" };
+  if (!user[2]) return { success: false, error: "尚未註冊設定密碼。" };
+  if (user[2].toString().trim() !== data.password.toString().trim()) return { success: false, error: "密碼錯誤。" };
+  return { success: true, name: user[1], group: user[0], role: user[3] || '組員' };
+}
+
+// ==========================================
+// 5. 公告系統
+// ==========================================
+function getAnnouncements() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Bulletin') || ss.insertSheet('Bulletin');
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { success: true, data: [] };
+  return { success: true, data: data.slice(1).map((row, idx) => ({ 
+    id: idx + 2, 
+    time: row[0] instanceof Date ? Utilities.formatDate(row[0], "GMT+8", "yyyy/MM/dd HH:mm") : row[0], 
+    title: row[1], content: row[2], link: row[3], visible: row[4] || 'Y' 
+  })).reverse() };
+}
+
+function updateAnnouncement(params) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Bulletin') || ss.insertSheet('Bulletin');
+  const now = new Date();
+  if (params.id) { sheet.getRange(parseInt(params.id), 1, 1, 5).setValues([[now, params.title, params.content, params.link, params.visible]]); }
+  else { sheet.appendRow([now, params.title, params.content, params.link, params.visible || 'Y']); }
+  return { success: true };
+}
+
+function handleFileUpload(params) {
+  try {
+    const folder = DriveApp.getFolderById(UPLOAD_FOLDER_ID);
+    const blob = Utilities.newBlob(Utilities.base64Decode(params.base64Data), params.mimeType, params.fileName);
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return { success: true, url: file.getUrl() };
+  } catch (err) { return { success: false, error: err.toString() }; }
+}
+
+// ==========================================
+// 6. 圖傳紀錄備份
+// ==========================================
+function handleSaveTransferRecord(params) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheetName = '圖傳';
+  let sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['時間戳記', '組別', '上傳者', '原始檔名', '圖片網址']);
+    sheet.getRange(1, 1, 1, 5).setBackground('#d1fae5').setFontWeight('bold');
+  }
+  sheet.appendRow([new Date(), params.group, params.name, params.fileName, params.url]);
+  return { success: true };
+}
+
+// ==========================================
+// 7. 測驗管理
+// ==========================================
+function handleSubmitQuiz(params) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const monthStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy/MM");
+  const sheetName = '結果' + monthStr;
+  let sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+  if (sheet.getLastRow() === 0) sheet.appendRow(['時間戳記', '組別', '姓名', '科目', '分數', '詳情']);
+  
+  const userAnswers = JSON.parse(params.userAnswersJson);
+  const quizData = JSON.parse(params.quizDataJson);
+  let score = 0;
+  const details = userAnswers.map((ua, i) => {
+    const q = quizData[i];
+    let isCorrect = ua.isBonus ? (ua.userAnswer && ua.userAnswer !== '未作答') : [].concat(q.answer).some(a => a.toString().trim().toLowerCase() === ua.userAnswer.toString().trim().toLowerCase());
+    if (isCorrect) score += (parseFloat(q.score) || 0);
+    return { question: q.question, userAnswer: ua.userAnswer, correctAnswer: [].concat(q.answer).join(', '), isCorrect: isCorrect, photo: q.photo || '' };
+  });
+  sheet.appendRow([new Date(), params.group, params.name, params.quizType, score, JSON.stringify(details)]);
+  return { status: 'success', score: score };
+}
+
+function getHistory(group, name) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const history = [];
+  ss.getSheets().forEach(s => {
+    if (s.getName().indexOf('結果') === 0) {
+      const rows = s.getDataRange().getValues();
+      rows.slice(1).forEach(row => { if (row[1].toString().trim() == group && row[2].toString().trim() == name) history.push({ timestamp: row[0] instanceof Date ? Utilities.formatDate(row[0], "GMT+8", "yyyy-MM-dd HH:mm") : row[0], quizType: row[3], score: row[4], details: row[5] }); });
+    }
+  });
+  return { success: true, data: history.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)) };
+}
