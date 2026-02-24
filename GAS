@@ -1,5 +1,6 @@
 /**
- * 崇華十六期整合管理系統 - GAS 後端主程式 (全功能整合版)
+ * 崇華十六期整合管理系統 - GAS 後端主程式 (全功能最終整合版)
+ * 包含：使用者、簽到、測驗、公告檔案、圖傳紀錄、加分系統、動態作業與統計
  */
 
 const SPREADSHEET_ID = '1u3D7u5hn7dcVGgGxmNBm233B_sz16kPuUcncvCnNr6U';
@@ -13,6 +14,7 @@ function doGet(e) {
   const name = e.parameter.name;
   const group = e.parameter.group;
   const role = e.parameter.role;
+  const topic = e.parameter.topic;
   
   try {
     switch (action) {
@@ -22,7 +24,10 @@ function doGet(e) {
       case 'getAttendanceReport': return JSONResponse(getAttendanceReport(role, group));
       case 'getAnnouncements': return JSONResponse(getAnnouncements());
       case 'getLocations': return JSONResponse(getLocationsData());
-      default: throw new Error("未定義的讀取動作");
+      // --- 作業相關 ---
+      case 'getHomeworkConfig': return JSONResponse(getHomeworkConfig());
+      case 'getHomeworkReport': return JSONResponse(getHomeworkReport(topic));
+      default: throw new Error("未定義的讀取動作: " + action);
     }
   } catch (err) {
     return JSONResponse({ success: false, error: err.toString() });
@@ -49,8 +54,9 @@ function doPost(e) {
       case 'updateAnnouncement': return JSONResponse(updateAnnouncement(params));
       case 'uploadFile': return JSONResponse(handleFileUpload(params));
       case 'saveTransferRecord': return JSONResponse(handleSaveTransferRecord(params));
-      // --- 新增：加分功能 ---
       case 'addBonusPoints': return JSONResponse(handleAddBonusPoints(params));
+      // --- 提交作業 ---
+      case 'submitHomework': return JSONResponse(handleSubmitHomework(params));
       default: throw new Error("未定義的寫入動作: " + action);
     }
   } catch (err) {
@@ -66,7 +72,81 @@ function JSONResponse(data) {
 }
 
 // ==========================================
-// 1. 加分功能 (新模組)
+// 1. 作業繳交與統計報告模組
+// ==========================================
+
+/**
+ * 讀取作業動態配置 (主題與字數要求)
+ */
+function getHomeworkConfig() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('HomeworkSettings') || ss.insertSheet('HomeworkSettings');
+  
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['作業主題', '最低字數']);
+    sheet.appendRow(['論語課程心得', 200]);
+  }
+  
+  const data = sheet.getDataRange().getValues();
+  const config = data.slice(1).map(row => ({
+    topic: row[0].toString(),
+    minChars: parseInt(row[1]) || 0
+  })).filter(c => c.topic !== "");
+  
+  return { success: true, data: config };
+}
+
+/**
+ * 提交作業寫入試算表
+ */
+function handleSubmitHomework(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheetName = '作業繳交紀錄';
+  let sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+  
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['時間戳記', '組別', '姓名', '作業主題', '心得內容', '參考網址']);
+    sheet.getRange(1, 1, 1, 6).setBackground('#e0e7ff').setFontWeight('bold');
+  }
+  
+  sheet.appendRow([
+    new Date(), 
+    data.group, 
+    data.name, 
+    data.topic, 
+    data.reflection, 
+    data.url || ''
+  ]);
+  
+  return { success: true };
+}
+
+/**
+ * 讀取作業繳交報告 (用於比對未繳名單)
+ */
+function getHomeworkReport(topic) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('作業繳交紀錄');
+  if (!sheet) return { success: true, data: [] };
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { success: true, data: [] };
+  
+  // 篩選出該特定主題的所有繳交記錄
+  const list = data.slice(1)
+    .filter(row => row[3] && row[3].toString().trim() === topic.toString().trim())
+    .map(row => ({
+      group: row[1].toString(),
+      name: row[2].toString(),
+      reflection: row[4].toString(),
+      time: row[0] instanceof Date ? Utilities.formatDate(row[0], "GMT+8", "MM/dd HH:mm") : ""
+    }));
+  
+  return { success: true, data: list };
+}
+
+// ==========================================
+// 2. 加分功能模組
 // ==========================================
 function handleAddBonusPoints(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -91,7 +171,7 @@ function handleAddBonusPoints(data) {
 }
 
 // ==========================================
-// 2. 座標地點管理
+// 3. 座標地點管理 (簽到驗證用)
 // ==========================================
 function getLocationsData() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -112,58 +192,36 @@ function getLocationsData() {
 }
 
 // ==========================================
-// 3. 參數設定系統
+// 4. 使用者權限與註冊
 // ==========================================
-function handleGetConfig() {
+function handleRegister(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Config') || ss.insertSheet('Config');
-  const data = sheet.getDataRange().getValues();
-  const config = {};
-  if (data.length > 1) {
-    data.slice(1).forEach(r => { 
-      if(r[0]) {
-        config[r[0].toString().trim()] = { 
-          start: r[1] instanceof Date ? Utilities.formatDate(r[1], "GMT+8", "yyyy-MM-dd HH:mm") : r[1].toString(), 
-          end: r[2] instanceof Date ? Utilities.formatDate(r[2], "GMT+8", "yyyy-MM-dd HH:mm") : (r[2] ? r[2].toString() : "")
-        }; 
-      }
-    });
+  const sheet = ss.getSheetByName('Users');
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0].toString().trim() === data.group.toString().trim() && rows[i][1].toString().trim() === data.name.toString().trim()) {
+      if (rows[i][2] && rows[i][2].toString().trim() !== "") return { success: false, error: "此帳號已註冊過。" };
+      sheet.getRange(i + 1, 3).setValue(data.password.toString());
+      sheet.getRange(i + 1, 5).setValue(new Date()); // 記錄註冊時間
+      return { success: true };
+    }
   }
-  return config;
+  return { success: false, error: "名單中找不到您的資料。" };
 }
 
-function handleUpdateConfig(configStr) {
+function handleLogin(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Config') || ss.insertSheet('Config');
-  const currentData = sheet.getDataRange().getValues();
-  const configMap = {};
-  
-  if (currentData.length > 1) {
-    currentData.slice(1).forEach(row => {
-      if (row[0]) {
-        configMap[row[0].toString().trim()] = { start: row[1], end: row[2] };
-      }
-    });
-  }
-  
-  const updates = JSON.parse(configStr);
-  for (let key in updates) {
-    configMap[key.trim()] = { start: updates[key].start, end: updates[key].end || "" };
-  }
-  
-  sheet.clear().appendRow(['項目', '開始時間/數值', '結束時間']);
-  sheet.getRange(1, 1, 1, 3).setBackground('#f3f4f6').setFontWeight('bold');
-  
-  const allKeys = Object.keys(configMap).sort();
-  allKeys.forEach(key => {
-    sheet.appendRow([key, configMap[key].start, configMap[key].end]);
-  });
-  
-  return { success: true };
+  const sheet = ss.getSheetByName('Users');
+  const rows = sheet.getDataRange().getValues();
+  const user = rows.find(row => row[0].toString().trim() === data.group.toString().trim() && row[1].toString().trim() === data.name.toString().trim());
+  if (!user) return { success: false, error: "帳號不存在。" };
+  if (!user[2]) return { success: false, error: "尚未註冊設定密碼。" };
+  if (user[2].toString().trim() !== data.password.toString().trim()) return { success: false, error: "密碼錯誤。" };
+  return { success: true, name: user[1], group: user[0], role: user[3] || '學員' };
 }
 
 // ==========================================
-// 4. 簽到系統
+// 5. 簽到系統
 // ==========================================
 function handleSignIn(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -225,36 +283,58 @@ function checkAttendanceStatus(group, name) {
 }
 
 // ==========================================
-// 5. 使用者管理
+// 6. 參數設定 (測驗時間、GitHub Token 等)
 // ==========================================
-function handleRegister(data) {
+function handleGetConfig() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Users');
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0].toString().trim() === data.group.toString().trim() && rows[i][1].toString().trim() === data.name.toString().trim()) {
-      if (rows[i][2] && rows[i][2].toString().trim() !== "") return { success: false, error: "此帳號已註冊過。" };
-      sheet.getRange(i + 1, 3).setValue(data.password.toString());
-      sheet.getRange(i + 1, 5).setValue(new Date());
-      return { success: true };
-    }
+  const sheet = ss.getSheetByName('Config') || ss.insertSheet('Config');
+  const data = sheet.getDataRange().getValues();
+  const config = {};
+  if (data.length > 1) {
+    data.slice(1).forEach(r => { 
+      if(r[0]) {
+        config[r[0].toString().trim()] = { 
+          start: r[1] instanceof Date ? Utilities.formatDate(r[1], "GMT+8", "yyyy-MM-dd HH:mm") : r[1].toString(), 
+          end: r[2] instanceof Date ? Utilities.formatDate(r[2], "GMT+8", "yyyy-MM-dd HH:mm") : (r[2] ? r[2].toString() : "")
+        }; 
+      }
+    });
   }
-  return { success: false, error: "名單中找不到您的資料。" };
+  return config;
 }
 
-function handleLogin(data) {
+function handleUpdateConfig(configStr) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Users');
-  const rows = sheet.getDataRange().getValues();
-  const user = rows.find(row => row[0].toString().trim() === data.group.toString().trim() && row[1].toString().trim() === data.name.toString().trim());
-  if (!user) return { success: false, error: "帳號不存在。" };
-  if (!user[2]) return { success: false, error: "尚未註冊設定密碼。" };
-  if (user[2].toString().trim() !== data.password.toString().trim()) return { success: false, error: "密碼錯誤。" };
-  return { success: true, name: user[1], group: user[0], role: user[3] || '組員' };
+  const sheet = ss.getSheetByName('Config') || ss.insertSheet('Config');
+  const currentData = sheet.getDataRange().getValues();
+  const configMap = {};
+  
+  if (currentData.length > 1) {
+    currentData.slice(1).forEach(row => {
+      if (row[0]) {
+        configMap[row[0].toString().trim()] = { start: row[1], end: row[2] };
+      }
+    });
+  }
+  
+  const updates = JSON.parse(configStr);
+  for (let key in updates) {
+    configMap[key.trim()] = { start: updates[key].start, end: updates[key].end || "" };
+  }
+  
+  sheet.clear().appendRow(['項目', '開始時間/數值', '結束時間']);
+  sheet.getRange(1, 1, 1, 3).setBackground('#f3f4f6').setFontWeight('bold');
+  
+  const allKeys = Object.keys(configMap).sort();
+  allKeys.forEach(key => {
+    sheet.appendRow([key, configMap[key].start, configMap[key].end]);
+  });
+  
+  return { success: true };
 }
 
 // ==========================================
-// 6. 公告與檔案系統
+// 7. 公告與檔案系統
 // ==========================================
 function getAnnouncements() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -280,27 +360,15 @@ function updateAnnouncement(params) {
 function handleFileUpload(params) {
   try {
     const folder = DriveApp.getFolderById(UPLOAD_FOLDER_ID);
-    const blob = Utilities.newBlob(Utilities.newBlob(Utilities.base64Decode(params.base64Data)).getBytes(), params.mimeType, params.fileName);
+    const blob = Utilities.newBlob(Utilities.base64Decode(params.base64Data), params.mimeType, params.fileName);
     const file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     return { success: true, url: file.getUrl() };
   } catch (err) { return { success: false, error: err.toString() }; }
 }
 
-function handleSaveTransferRecord(params) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheetName = '圖傳';
-  let sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['時間戳記', '組別', '上傳者', '原始檔名', '圖片網址']);
-    sheet.getRange(1, 1, 1, 5).setBackground('#d1fae5').setFontWeight('bold');
-  }
-  sheet.appendRow([new Date(), params.group, params.name, params.fileName, params.url]);
-  return { success: true };
-}
-
 // ==========================================
-// 7. 測驗管理
+// 8. 測驗與歷史紀錄
 // ==========================================
 function handleSubmitQuiz(params) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -328,8 +396,30 @@ function getHistory(group, name) {
   ss.getSheets().forEach(s => {
     if (s.getName().indexOf('結果') === 0) {
       const rows = s.getDataRange().getValues();
-      rows.slice(1).forEach(row => { if (row[1].toString().trim() == group && row[2].toString().trim() == name) history.push({ timestamp: row[0] instanceof Date ? Utilities.formatDate(row[0], "GMT+8", "yyyy-MM-dd HH:mm") : row[0], quizType: row[3], score: row[4], details: row[5] }); });
+      rows.slice(1).forEach(row => { 
+        if (row[1].toString().trim() == group && row[2].toString().trim() == name) {
+          history.push({ 
+            timestamp: row[0] instanceof Date ? Utilities.formatDate(row[0], "GMT+8", "yyyy-MM-dd HH:mm") : row[0], 
+            quizType: row[3], score: row[4], details: row[5] 
+          }); 
+        } 
+      });
     }
   });
   return { success: true, data: history.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)) };
+}
+
+// ==========================================
+// 9. 圖傳工具備份
+// ==========================================
+function handleSaveTransferRecord(params) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheetName = '圖傳';
+  let sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['時間戳記', '組別', '上傳者', '原始檔名', '圖片網址']);
+    sheet.getRange(1, 1, 1, 5).setBackground('#d1fae5').setFontWeight('bold');
+  }
+  sheet.appendRow([new Date(), params.group, params.name, params.fileName, params.url]);
+  return { success: true };
 }
