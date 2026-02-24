@@ -164,6 +164,9 @@
             line-height: 1.5;
             white-space: pre-wrap;
         }
+
+        .submitted-card { border-left: 4px solid #10b981; }
+        .unsubmitted-card { border-left: 4px solid #ef4444; }
     </style>
 </head>
 <body>
@@ -360,12 +363,50 @@
                         <option value="道德經">道德經</option>
                         <option value="六祖">六祖壇經</option>
                     </select>
-                    <!-- 修改：初始按鈕樣式與狀態 -->
                     <button onclick="startQuizFlow()" id="start-quiz-btn" class="w-full py-4 btn-primary rounded-2xl font-black text-lg shadow-xl active:scale-95 disabled:grayscale">載入考卷</button>
                     <p id="quiz-time-hint" class="text-xs text-rose-500 font-black mt-2 hidden">※ 目前非開放測驗時段</p>
                 </div>
             </div>
             <div id="quiz-main" class="mt-4 hidden"><div id="quiz-content" class="space-y-6"></div></div>
+        </section>
+
+        <!-- 作業繳交模組 -->
+        <section id="view-homework" class="hidden-view fade-in py-6">
+            <div class="glass-card rounded-3xl p-8 border">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-black text-slate-800">心得作業繳交</h2>
+                        <p class="text-slate-500 text-xs font-bold">記錄您的學習成長與體悟</p>
+                    </div>
+                </div>
+
+                <div class="space-y-5 font-bold">
+                    <div>
+                        <label class="text-[10px] text-slate-400 uppercase ml-1">作業主題</label>
+                        <select id="homework-topic" onchange="onHomeworkTopicChange()" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 appearance-none text-slate-700 mt-1">
+                            <option value="" disabled selected>載入中...</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-end mb-1 px-1">
+                            <label class="text-[10px] text-slate-400 uppercase">心得內容 <span id="homework-min-hint" class="text-indigo-600 font-black ml-1"></span></label>
+                            <span id="char-count" class="text-[10px] text-slate-400">0 字</span>
+                        </div>
+                        <textarea id="homework-reflection" oninput="updateCharCount()" placeholder="在此輸入您的心得內容..." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl h-48 outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 leading-relaxed"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="text-[10px] text-slate-400 uppercase ml-1">參考網址 / 雲端連結 (選填)</label>
+                        <input type="url" id="homework-url" placeholder="https://..." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 mt-1">
+                    </div>
+
+                    <button onclick="handleHomeworkSubmit()" id="homework-submit-btn" class="w-full py-4 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-indigo-100 active:scale-95 transition-all mt-4">確認繳交作業</button>
+                </div>
+            </div>
         </section>
 
         <!-- 成績模組 -->
@@ -389,11 +430,32 @@
             </div>
             
             <div id="admin-group-filter-container" class="hidden mb-6 bg-white p-5 rounded-3xl border shadow-sm flex items-center gap-4">
-                <span class="text-xs font-black text-slate-400 uppercase whitespace-nowrap">篩選</span>
+                <span class="text-xs font-black text-slate-400 uppercase whitespace-nowrap">篩選組別</span>
                 <select id="admin-group-filter" onchange="applyFilters()" class="w-full p-3 border rounded-xl bg-slate-50 outline-none font-bold text-slate-700 text-sm"></select>
             </div>
 
+            <!-- 點名報告區 -->
+            <div class="mb-4 px-2 flex justify-between items-center">
+                <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">點名出席狀況</h3>
+            </div>
             <div id="attendance-report-list" class="space-y-3 mb-10"></div>
+
+            <!-- 作業統計報告區 (新功能) -->
+            <div id="admin-homework-report-container" class="mb-10 p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100 shadow-sm">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div>
+                        <h3 class="text-lg font-black text-indigo-800 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            作業繳交統計
+                        </h3>
+                        <p class="text-[10px] text-indigo-500 font-bold uppercase mt-1">選取作業主題查看名單</p>
+                    </div>
+                    <select id="admin-homework-topic" onchange="loadHomeworkReport()" class="w-full sm:w-auto p-3 border-2 border-indigo-200 rounded-xl bg-white outline-none font-black text-indigo-700 text-xs"></select>
+                </div>
+                <div id="homework-report-list" class="space-y-3">
+                    <div class="text-center py-10 text-indigo-300 font-bold italic">請選擇上方作業主題</div>
+                </div>
+            </div>
 
             <div id="quiz-config-container" class="bg-slate-900 p-8 rounded-3xl shadow-2xl hidden mb-10 text-center">
                 <div class="flex justify-between items-center mb-6">
@@ -429,6 +491,10 @@
         <div class="nav-item" onclick="switchView('quiz')">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
             <span>測驗</span>
+        </div>
+        <div class="nav-item" onclick="switchView('homework')">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+            <span>作業</span>
         </div>
         <div class="nav-item" onclick="switchView('results')">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
@@ -498,7 +564,6 @@
         </div>
     </div>
 
-    <!-- 加分功能視窗 -->
     <div id="bonus-points-modal" class="modal" onclick="closeBonusModal()">
         <div class="modal-content !max-w-md" onclick="event.stopPropagation()">
             <h3 class="text-xl font-black mb-4 text-slate-800">學員表現加分</h3>
@@ -530,7 +595,6 @@
 
     <script>
         // --- 設定與環境變數 ---
-        // 注意：這裡使用您在對話中最新的 GAS URL
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwtk3eAos7SyJlz1jMjGipzZV5hMpobQgrL_cS_tKRwdK071y6kDXnpHQajs_XyQKEb4w/exec'; 
         const SPREADSHEET_ID = '1u3D7u5hn7dcVGgGxmNBm233B_sz16kPuUcncvCnNr6U';
         const TEAMS_GID = '1026036029';
@@ -540,7 +604,7 @@
 
         let currentUser = null, teamsData = {}, historyData = [], cachedAnnouncements = [], cachedSignedUsers = [], proxyTarget = null, bonusTarget = null;
         let currentQuizOpenStatus = false, quizData = [], activeRowForUpload = null;
-        let checkinZones = [];
+        let checkinZones = [], cachedHomeworkConfig = [], cachedHomeworkSubmissions = [];
 
         // --- 核心工具 ---
         function parseToTaipeiDate(val) { 
@@ -680,7 +744,7 @@
             if (target) target.classList.remove('hidden-view');
             
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            const menuMap = { 'bulletin': 0, 'attendance': 1, 'quiz': 2, 'results': 3, 'img-transfer': 4, 'admin': 5 };
+            const menuMap = { 'bulletin': 0, 'attendance': 1, 'quiz': 2, 'homework': 3, 'results': 4, 'img-transfer': 5, 'admin': 6 };
             const navItems = document.querySelectorAll('.nav-item');
             if (navItems[menuMap[viewName]]) navItems[menuMap[viewName]].classList.add('active');
 
@@ -693,6 +757,12 @@
             if(viewName === 'results' && currentUser) loadHistoryData();
             if(viewName === 'admin' && currentUser) loadAdminDashboard();
             if(viewName === 'img-transfer') setupImgTransfer();
+            if(viewName === 'homework') {
+                document.getElementById('homework-reflection').value = "";
+                document.getElementById('homework-url').value = "";
+                onHomeworkTopicChange(); 
+                updateCharCount();
+            }
             window.scrollTo(0,0);
         }
 
@@ -882,27 +952,44 @@
             const isLeader = ['Leader', '組長'].some(r => currentUser.role.includes(r));
             
             try {
-                const res = await fetch(`${APPS_SCRIPT_URL}?action=getAttendanceReport&role=${encodeURIComponent(currentUser.role)}&group=${encodeURIComponent(currentUser.group)}`);
-                const result = await res.json(); 
-                cachedSignedUsers = result.data || [];
+                // 使用 Promise.all 提升加載效率
+                const [attendanceRes, configRes, homeworkConfigRes] = await Promise.all([
+                    fetch(`${APPS_SCRIPT_URL}?action=getAttendanceReport&role=${encodeURIComponent(currentUser.role)}&group=${encodeURIComponent(currentUser.group)}`),
+                    fetch(`${APPS_SCRIPT_URL}?action=getConfig`),
+                    fetch(`${APPS_SCRIPT_URL}?action=getHomeworkConfig`)
+                ]);
+                
+                const attendanceResult = await attendanceRes.json();
+                const homeworkConfigResult = await homeworkConfigRes.json();
+                
+                cachedSignedUsers = attendanceResult.data || [];
                 
                 const filterContainer = document.getElementById('admin-group-filter-container');
                 const filterSelect = document.getElementById('admin-group-filter');
+                const homeworkReportSelect = document.getElementById('admin-homework-topic');
                 
                 if (isAdminOrTeacher) {
                     filterContainer.classList.remove('hidden');
                     if(filterSelect.options.length === 0) {
-                        filterSelect.innerHTML = '<option value="ALL">🔍 查看所有組別報告</option>';
+                        filterSelect.innerHTML = '<option value="ALL">🔍 查看所有組別點名報告</option>';
                         Object.keys(teamsData).sort((a,b)=>GROUP_ORDER.indexOf(a)-GROUP_ORDER.indexOf(b)).forEach(g => filterSelect.add(new Option(g, g)));
                     }
                     document.getElementById('quiz-config-container').classList.remove('hidden');
                 } else if (isLeader) {
                     filterContainer.classList.add('hidden');
                 }
+
+                // 填充作業統計主題選單
+                if (homeworkConfigResult.success && homeworkReportSelect.options.length === 0) {
+                    homeworkReportSelect.innerHTML = '<option value="" disabled selected>請選擇作業主題</option>';
+                    homeworkConfigResult.data.forEach(cfg => homeworkReportSelect.add(new Option(cfg.topic, cfg.topic)));
+                }
                 
                 applyFilters(); 
-                loadQuizConfigs();
-            } catch (e) {}
+                loadQuizConfigs(); // 內部已包含處理 configRes
+            } catch (e) {
+                toast("管理資料載入失敗", true);
+            }
         }
 
         function applyFilters() {
@@ -933,11 +1020,9 @@
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="${tCol} text-[11px] font-black tracking-tighter mr-2">${txt}</span>
-                            <!-- 加分按鈕 -->
                             <button onclick="openBonusModal('${gn}', '${name}')" class="p-2 text-amber-400 hover:text-amber-600 transition-colors">
                                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
                             </button>
-                            <!-- 簽到調整按鈕 -->
                             <button onclick="openProxyModal('${gn}', '${name}')" class="p-2 text-slate-300 hover:text-emerald-600 transition-colors">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                             </button>
@@ -965,11 +1050,9 @@
             const pts = document.getElementById('bonus-points-input').value;
             const reason = document.getElementById('bonus-reason-input').value;
             if(!pts) return toast("請輸入分數", true);
-            
             const btn = document.getElementById('bonus-submit-btn');
             btn.disabled = true;
             toast("正在記錄加分...");
-
             try {
                 const res = await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
@@ -986,14 +1069,144 @@
                 if(r.success) {
                     toast(`${bonusTarget.name} 加分成功！`);
                     closeBonusModal();
-                } else {
-                    toast(r.error || "加分失敗", true);
-                }
-            } catch (e) {
-                toast("連線異常，請確認後端 GAS 已部署", true);
-            } finally {
-                btn.disabled = false;
-            }
+                } else toast(r.error || "加分失敗", true);
+            } catch (e) { toast("連線異常", true); } finally { btn.disabled = false; }
+        }
+
+        // --- 作業報告與提醒功能 (新功能) ---
+        async function loadHomeworkReport() {
+            const topic = document.getElementById('admin-homework-topic').value;
+            const listDiv = document.getElementById('homework-report-list');
+            if(!topic) return;
+            
+            listDiv.innerHTML = '<div class="text-center py-10"><div class="animate-spin rounded-full h-6 w-6 border-2 border-indigo-500 border-t-transparent mx-auto"></div></div>';
+
+            try {
+                const res = await fetch(`${APPS_SCRIPT_URL}?action=getHomeworkReport&topic=${encodeURIComponent(topic)}`);
+                const r = await res.json();
+                if(r.success) {
+                    cachedHomeworkSubmissions = r.data;
+                    renderHomeworkReport();
+                } else toast("作業紀錄讀取失敗", true);
+            } catch (e) { toast("網路連線異常", true); }
+        }
+
+        function renderHomeworkReport() {
+            const topic = document.getElementById('admin-homework-topic').value;
+            const listDiv = document.getElementById('homework-report-list');
+            const isLeader = ['Leader', '組長'].some(r => currentUser.role.includes(r));
+            const gVal = isLeader ? currentUser.group : (document.getElementById('admin-group-filter')?.value || 'ALL');
+            
+            let html = '';
+            const targetGroups = (gVal === 'ALL' ? Object.keys(teamsData).sort((a,b)=>GROUP_ORDER.indexOf(a)-GROUP_ORDER.indexOf(b)) : [gVal]);
+            
+            targetGroups.forEach(gn => {
+                const members = teamsData[gn] || [];
+                const submissionsInGroup = cachedHomeworkSubmissions.filter(s => s.group === gn);
+                const submittedNames = submissionsInGroup.map(s => s.name);
+                const unsubmittedNames = members.filter(name => !submittedNames.includes(name));
+
+                html += `<div class="text-[10px] font-black text-indigo-400 mt-6 px-2 border-l-4 border-indigo-500 ml-1 mb-3 uppercase tracking-widest">${gn} - 統計報告</div>`;
+
+                // 已繳名單
+                submissionsInGroup.forEach(s => {
+                    html += `
+                    <div class="bg-white p-4 rounded-2xl border border-emerald-100 mb-2 shadow-sm submitted-card flex justify-between items-start">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">已繳交</span>
+                                <span class="font-bold text-slate-700">${s.name}</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-medium truncate max-w-[180px]">${s.reflection.substring(0, 30)}...</p>
+                        </div>
+                        <span class="text-[10px] text-slate-300 font-black tracking-tighter">${s.time}</span>
+                    </div>`;
+                });
+
+                // 未繳名單
+                unsubmittedNames.forEach(name => {
+                    html += `
+                    <div class="bg-white p-4 rounded-2xl border border-rose-100 mb-2 shadow-sm unsubmitted-card flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded">未繳交</span>
+                            <span class="font-bold text-slate-700">${name}</span>
+                        </div>
+                        <button onclick="remindHomework('${name}')" class="text-[10px] font-black text-rose-400 hover:text-rose-600 bg-rose-50 px-3 py-1.5 rounded-full transition-colors">發送提醒</button>
+                    </div>`;
+                });
+            });
+
+            listDiv.innerHTML = html || '<div class="text-center py-10 text-slate-300 italic">該範圍內尚無學員資料</div>';
+        }
+
+        function remindHomework(name) {
+            toast(`已模擬向 ${name} 發送系統提醒訊息`);
+            // 此處可擴充發送 Line Notify 或記錄提醒次數
+        }
+
+        // --- 作業繳交邏輯 ---
+        async function fetchHomeworkConfig() {
+            const select = document.getElementById('homework-topic');
+            try {
+                const res = await fetch(`${APPS_SCRIPT_URL}?action=getHomeworkConfig`);
+                const r = await res.json();
+                if(r.success) {
+                    cachedHomeworkConfig = r.data;
+                    select.innerHTML = '<option value="" disabled selected>請選擇作業主題</option>';
+                    cachedHomeworkConfig.forEach(cfg => select.add(new Option(cfg.topic, cfg.topic)));
+                } else select.innerHTML = '<option value="" disabled selected>載入失敗</option>';
+            } catch (e) { select.innerHTML = '<option value="" disabled selected>連線異常</option>'; }
+        }
+
+        function onHomeworkTopicChange() {
+            const topic = document.getElementById('homework-topic').value;
+            const cfg = cachedHomeworkConfig.find(c => c.topic === topic);
+            const hint = document.getElementById('homework-min-hint');
+            if(cfg) hint.innerText = `(最少需寫 ${cfg.minChars} 字)`;
+            else hint.innerText = "";
+            updateCharCount();
+        }
+
+        function updateCharCount() {
+            const val = document.getElementById('homework-reflection').value;
+            const topic = document.getElementById('homework-topic').value;
+            const cfg = cachedHomeworkConfig.find(c => c.topic === topic);
+            const display = document.getElementById('char-count');
+            let colorClass = "text-slate-400";
+            if(cfg && val.length < cfg.minChars) colorClass = "text-rose-500 font-bold";
+            else if(cfg && val.length >= cfg.minChars) colorClass = "text-emerald-500 font-bold";
+            display.className = `text-[10px] ${colorClass}`;
+            display.innerText = `${val.length} 字`;
+        }
+
+        async function handleHomeworkSubmit() {
+            const topic = document.getElementById('homework-topic').value;
+            const reflection = document.getElementById('homework-reflection').value;
+            const url = document.getElementById('homework-url').value;
+            const cfg = cachedHomeworkConfig.find(c => c.topic === topic);
+            if(!topic) return toast("請選擇作業主題", true);
+            if(cfg && reflection.length < cfg.minChars) return toast(`這項作業的心得內容最少需要 ${cfg.minChars} 字唷！`, true);
+            const btn = document.getElementById('homework-submit-btn');
+            btn.disabled = true;
+            toast("正在繳交作業...");
+            try {
+                const res = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'submitHomework',
+                        group: currentUser.group,
+                        name: currentUser.name,
+                        topic: topic,
+                        reflection: reflection,
+                        url: url
+                    })
+                });
+                const r = await res.json();
+                if(r.success) {
+                    toast("作業繳交成功！");
+                    switchView('bulletin');
+                } else toast(r.error || "提交失敗", true);
+            } catch (e) { toast("連線異常", true); } finally { btn.disabled = false; }
         }
 
         // --- 測驗開放時段同步邏輯 ---
@@ -1001,32 +1214,24 @@
             try { 
                 const res = await fetch(`${APPS_SCRIPT_URL}?action=getConfig`);
                 const config = await res.json();
-                
                 if (config.gh_token?.start) localStorage.setItem('gh_token', config.gh_token.start);
                 if (config.gh_repo?.start) localStorage.setItem('gh_repo', config.gh_repo.start);
-                
                 const sConf = config['隨堂'] || { start: '', end: '' };
                 const format = (v) => { 
                     if (!v) return ''; 
                     let d = v.toString().trim().replace(/\//g, '-').replace(' ', 'T'); 
                     return d.substring(0, 16); 
                 }; 
-                
                 const sI = document.getElementById('unified-quiz-start'), eI = document.getElementById('unified-quiz-end');
                 if(sI) sI.value = format(sConf.start); 
                 if(eI) eI.value = format(sConf.end); 
-                
                 const now = new Date(), st = parseToTaipeiDate(sConf.start), et = parseToTaipeiDate(sConf.end); 
                 currentQuizOpenStatus = (st && et && now >= st && now <= et); 
-                
-                // 1. 更新管理端按鈕
                 const adminBtn = document.getElementById('master-quiz-toggle'); 
                 if(adminBtn) { 
                     adminBtn.innerText = currentQuizOpenStatus ? "🟢 測驗中 (點擊關閉)" : "🔴 關閉中 (點擊啟動)"; 
                     adminBtn.className = currentQuizOpenStatus ? "w-full py-5 rounded-2xl font-black text-white shadow-xl transition-all mb-8 text-xl tracking-tighter bg-emerald-600" : "w-full py-5 rounded-2xl font-black text-white shadow-xl transition-all mb-8 text-xl tracking-tighter bg-rose-600"; 
                 }
-
-                // 2. 更新學員端按鈕與提示
                 const studentBtn = document.getElementById('start-quiz-btn');
                 const timeHint = document.getElementById('quiz-time-hint');
                 if (studentBtn) {
@@ -1052,9 +1257,7 @@
                 document.getElementById('unified-quiz-end').value = pastTime.replace(' ', 'T');
                 toast('正在關閉...'); 
                 await saveUnifiedQuizSettings(true); 
-            } else { 
-                quickOpenTwoHours(); 
-            }
+            } else quickOpenTwoHours(); 
         }
 
         async function quickOpenTwoHours() {
@@ -1094,9 +1297,7 @@
                             </div>
                             <div class="text-4xl font-black ${h.score >= 80 ? 'text-emerald-500' : 'text-amber-500'}">${h.score}</div>
                         </div>`).join(''); 
-                } else { 
-                    list.innerHTML = '<div class="text-center py-20 text-slate-300 font-bold italic">尚無任何測驗成績</div>'; 
-                } 
+                } else list.innerHTML = '<div class="text-center py-20 text-slate-300 font-bold italic">尚無任何測驗成績</div>'; 
             } catch (e) {} 
         }
 
@@ -1123,9 +1324,7 @@
             const tI = document.getElementById('inputToken'), rI = document.getElementById('inputRepo');
             tI.value = localStorage.getItem('gh_token') || ''; 
             rI.value = localStorage.getItem('gh_repo') || ''; 
-            
             loadBatchHistory();
-            
             document.getElementById('configToggle').onclick = () => document.getElementById('configPanel').classList.toggle('hidden');
             document.getElementById('saveConfig').onclick = () => { 
                 const t = tI.value.trim(), r = rI.value.trim(); 
@@ -1135,23 +1334,19 @@
                 toast("設定已儲存"); 
                 document.getElementById('configPanel').classList.add('hidden'); 
             };
-            
             const fi = document.getElementById('batchFileInput'), dz = document.getElementById('batch-drop-zone'), ub = document.getElementById('batchUploadBtn');
             dz.onclick = () => fi.click();
             fi.onchange = (e) => { 
                 const c = e.target.files.length; 
                 if (c > 0) document.getElementById('batch-selected-count').innerText = `已選取 ${c} 個檔案`; 
             };
-            
             ub.onclick = async () => {
                 const t = localStorage.getItem('gh_token'), r = localStorage.getItem('gh_repo'), files = fi.files;
                 if (!t || !r) return toast("請先完成設定", true); 
                 if (files.length === 0) return toast("請選取照片", true); 
-                
                 ub.disabled = true; 
                 document.getElementById('batch-result-container').classList.remove('hidden'); 
                 document.getElementById('batch-result-list').innerHTML = ''; 
-                
                 for (let i = 0; i < files.length; i++) {
                     const f = files[i]; 
                     ub.innerText = `正在上傳 (${i+1}/${files.length})...`;
@@ -1233,7 +1428,7 @@
             document.getElementById('ann-content').value = d ? d.content : ""; 
             document.getElementById('ann-visible').value = d ? d.visible : "Y"; 
             const container = document.getElementById('ann-resources-container'); container.innerHTML = ''; 
-            if (d) { safeJSONParse(d.link, []).forEach(r => addResourceRow(r.label, r.url)); } else { addResourceRow('', ''); } 
+            if (d) { safeJSONParse(d.link, []).forEach(r => addResourceRow(r.label, r.url)); } else addResourceRow('', ''); 
         }
 
         function closeAnnouncementModal() { document.getElementById('announcement-modal').style.display = 'none'; }
@@ -1278,29 +1473,19 @@
             } catch (e) {} finally { btn.disabled = false; } 
         }
 
-        // --- 核心測驗啟動邏輯 (已修正時間檢查) ---
         async function startQuizFlow() { 
-            // 重要：攔截非開放時段的進入
-            if (!currentQuizOpenStatus) {
-                return toast('目前非測驗開放時段，無法開始考試', true);
-            }
-
+            if (!currentQuizOpenStatus) return toast('目前非測驗開放時段，無法開始考試', true);
             const type = document.getElementById('quiz-type-select')?.value; 
             if (!type) return toast('請選擇科目', true); 
-            
             const btn = document.getElementById('start-quiz-btn'); 
             btn.disabled = true; 
-            
             try { 
                 document.getElementById('quiz-init').classList.add('hidden'); 
                 document.getElementById('quiz-main').classList.remove('hidden'); 
                 const [q1, q2] = await Promise.all([fetchSingleSheet(QUIZ_GIDS['隨堂']), fetchSingleSheet(QUIZ_GIDS[type])]); 
                 quizData = [...q1, ...q2]; 
                 renderQuiz(); 
-            } catch (e) { 
-                btn.disabled = false; 
-                toast('讀取題目失敗，請稍後再試', true);
-            } 
+            } catch (e) { btn.disabled = false; toast('讀取題目失敗，請稍後再試', true); } 
         }
 
         function renderQuiz() { 
@@ -1325,7 +1510,7 @@
         async function fetchSingleSheet(gid) { try { const res = await fetch(`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&gid=${gid}`), text = await res.text(), data = JSON.parse(text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);/)[1]); return data.table.rows.map(r => { if (!r.c[0]?.v) return null; return { question: r.c[0]?.v, type: r.c[1]?.v?.toLowerCase().trim() || 'single', options: r.c[2]?.v ? String(r.c[2].v).split(',').map(s=>s.trim()) : [], answer: String(r.c[3]?.v||'').split(',').map(s=>s.trim()), score: parseFloat(r.c[4]?.v||0), photo: r.c[5]?.v || '', isBonus: r.c[6]?.v === '是' || r.c[6]?.v === 'Yes' }; }).filter(q => q !== null); } catch(e) { return []; } }
 
         function initApp() {
-            fetchTeamsData(); fetchLocationData(); loadQuizConfigs();
+            fetchTeamsData(); fetchLocationData(); loadQuizConfigs(); fetchHomeworkConfig();
             const saved = localStorage.getItem('sh_user_secure');
             if(saved && saved !== "undefined") {
                 try {
@@ -1338,7 +1523,7 @@
                     if (['Admin','Teacher','發布員'].some(r => role.includes(r))) { document.getElementById('add-announcement-btn')?.classList.remove('hidden'); document.getElementById('nav-img-transfer').classList.remove('hidden'); }
                     switchView('bulletin');
                 } catch(e) { switchView('login'); }
-            } else { switchView('login'); }
+            } else switchView('login'); 
         }
 
         function logout() { if(confirm("確定登出？")) { localStorage.removeItem('sh_user_secure'); location.reload(); } }
