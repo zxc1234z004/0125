@@ -1,5 +1,5 @@
 /**
- * 崇華十六期整合管理系統 - GAS 後端主程式 (定位管理優化版)
+ * 崇華十六期整合管理系統 - GAS 後端主程式 (全功能整合版)
  */
 
 const SPREADSHEET_ID = '1u3D7u5hn7dcVGgGxmNBm233B_sz16kPuUcncvCnNr6U';
@@ -21,7 +21,7 @@ function doGet(e) {
       case 'checkAttendance': return JSONResponse(checkAttendanceStatus(group, name));
       case 'getAttendanceReport': return JSONResponse(getAttendanceReport(role, group));
       case 'getAnnouncements': return JSONResponse(getAnnouncements());
-      case 'getLocations': return JSONResponse(getLocationsData()); // 新增：讀取座標清單
+      case 'getLocations': return JSONResponse(getLocationsData());
       default: throw new Error("未定義的讀取動作");
     }
   } catch (err) {
@@ -49,6 +49,8 @@ function doPost(e) {
       case 'updateAnnouncement': return JSONResponse(updateAnnouncement(params));
       case 'uploadFile': return JSONResponse(handleFileUpload(params));
       case 'saveTransferRecord': return JSONResponse(handleSaveTransferRecord(params));
+      // --- 新增：加分功能 ---
+      case 'addBonusPoints': return JSONResponse(handleAddBonusPoints(params));
       default: throw new Error("未定義的寫入動作: " + action);
     }
   } catch (err) {
@@ -64,7 +66,32 @@ function JSONResponse(data) {
 }
 
 // ==========================================
-// 1. 座標地點管理 (新增功能)
+// 1. 加分功能 (新模組)
+// ==========================================
+function handleAddBonusPoints(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheetName = '加分紀錄';
+  let sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+  
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['時間', '組別', '姓名', '加分分值', '原因', '操作人']);
+    sheet.getRange(1, 1, 1, 6).setBackground('#fef3c7').setFontWeight('bold');
+  }
+  
+  sheet.appendRow([
+    new Date(), 
+    data.group, 
+    data.name, 
+    data.points, 
+    data.reason || '無備註', 
+    data.admin || '管理員'
+  ]);
+  
+  return { success: true };
+}
+
+// ==========================================
+// 2. 座標地點管理
 // ==========================================
 function getLocationsData() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -85,7 +112,7 @@ function getLocationsData() {
 }
 
 // ==========================================
-// 2. 參數設定系統 (合併模式)
+// 3. 參數設定系統
 // ==========================================
 function handleGetConfig() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -136,7 +163,7 @@ function handleUpdateConfig(configStr) {
 }
 
 // ==========================================
-// 3. 簽到系統與出席報表
+// 4. 簽到系統
 // ==========================================
 function handleSignIn(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -170,7 +197,7 @@ function getAttendanceReport(role, userGroup) {
     group: row[1], 
     name: row[2], 
     time: row[0] instanceof Date ? Utilities.formatDate(row[0], "GMT+8", "HH:mm") : "", 
-    note: row[3] // 狀態
+    note: row[3]
   }));
   
   return { success: true, data: list };
@@ -185,7 +212,6 @@ function checkAttendanceStatus(group, name) {
   const today = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd");
   const rows = sheet.getDataRange().getValues();
   
-  // 找尋最後一筆紀錄
   const row = rows.slice().reverse().find(r => 
     Utilities.formatDate(new Date(r[0]), "GMT+8", "yyyy-MM-dd") === today && 
     r[1].toString().trim() == group.toString().trim() && 
@@ -199,7 +225,7 @@ function checkAttendanceStatus(group, name) {
 }
 
 // ==========================================
-// 4. 使用者管理
+// 5. 使用者管理
 // ==========================================
 function handleRegister(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -228,7 +254,7 @@ function handleLogin(data) {
 }
 
 // ==========================================
-// 5. 公告系統
+// 6. 公告與檔案系統
 // ==========================================
 function getAnnouncements() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -254,16 +280,13 @@ function updateAnnouncement(params) {
 function handleFileUpload(params) {
   try {
     const folder = DriveApp.getFolderById(UPLOAD_FOLDER_ID);
-    const blob = Utilities.newBlob(Utilities.base64Decode(params.base64Data), params.mimeType, params.fileName);
+    const blob = Utilities.newBlob(Utilities.newBlob(Utilities.base64Decode(params.base64Data)).getBytes(), params.mimeType, params.fileName);
     const file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     return { success: true, url: file.getUrl() };
   } catch (err) { return { success: false, error: err.toString() }; }
 }
 
-// ==========================================
-// 6. 圖傳紀錄備份
-// ==========================================
 function handleSaveTransferRecord(params) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheetName = '圖傳';
